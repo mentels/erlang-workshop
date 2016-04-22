@@ -12,7 +12,8 @@ start(Port) ->
 %% Internal Functions
 
 init(Port) ->
-    {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true}]),
+    {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true},
+                                               {reuseaddr, true}]),
     {ok, Socket} = gen_tcp:accept(ListenSocket),
     loop(Socket).
 
