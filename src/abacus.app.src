@@ -1,14 +1,12 @@
 {application, abacus,
  [
-  {description, "An Erlang abacus library"},
-  {vsn, "1"},
-  {modules, [
-             abacus
-            ]},
+  {description, "KYN Abacus"},
+  {vsn, "1.0"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib
                  ]},
-  {env, []}
+  {mod, { abacus_app, []}},
+  {env, [{port, 1234}]}
  ]}.
