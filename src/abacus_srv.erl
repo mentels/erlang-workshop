@@ -34,7 +34,8 @@ start_link(Port) ->
 
 init([Port]) ->
     process_flag(trap_exit, true),
-    {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true}]),
+    {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true},
+                                               {reuseaddr, true}]),
     ok = gen_server:cast(?SERVER, accept),
     {ok, #state{port = Port, lsocket = ListenSocket}}.
 
