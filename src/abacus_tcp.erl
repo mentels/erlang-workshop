@@ -14,10 +14,14 @@ start(Port) ->
 init(Port) ->
     {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true},
                                                {reuseaddr, true}]),
-    {ok, Socket} = gen_tcp:accept(ListenSocket),
-    loop(Socket).
+    accept_loop(ListenSocket).
 
-loop(Socket) ->
+accept_loop(ListenSocket) ->
+    {ok, Socket} = gen_tcp:accept(ListenSocket),
+    client_loop(Socket),
+    accept_loop(ListenSocket).
+
+client_loop(Socket) ->
     case wait_for_request(Socket) of
         {error, socket_closed} = Err ->
             Err;
@@ -25,7 +29,7 @@ loop(Socket) ->
             ParsedRequest = (catch parse_request(Request)),
             Response = process_request(ParsedRequest),
             gen_tcp:send(Socket, Response),
-            loop(Socket)
+            client_loop(Socket)
     end.
 
 wait_for_request(Socket) ->
