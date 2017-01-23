@@ -18,8 +18,12 @@ init(Port) ->
 
 accept_loop(ListenSocket) ->
     {ok, Socket} = gen_tcp:accept(ListenSocket),
-    client_loop(Socket),
+    spawn_client(Socket),
     accept_loop(ListenSocket).
+
+spawn_client(Socket) ->
+    Pid = spawn_link(fun() -> client_loop(Socket) end),
+    ok = gen_tcp:controlling_process(Socket, Pid).
 
 client_loop(Socket) ->
     case wait_for_request(Socket) of
