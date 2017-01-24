@@ -1,6 +1,6 @@
 -module(abacus_tcp).
 
--export([start/1]).
+-export([start/1, conn_cnt/0]).
 -export([init/1]).
 
 %% API
@@ -9,20 +9,41 @@ start(Port) ->
     Pid = spawn(?MODULE, init, [Port]),
     register(?MODULE, Pid).
 
+conn_cnt() ->
+    ?MODULE ! {abacus_req, self(), conn_cnt},
+    receive
+        {abacus_req, Reply} ->
+            Reply
+    end.
+
 %% Internal Functions
 
 init(Port) ->
     {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true},
                                                {reuseaddr, true}]),
-    accept_loop(ListenSocket).
+    accept_loop(ListenSocket, 0).
 
-accept_loop(ListenSocket) ->
-    {ok, Socket} = gen_tcp:accept(ListenSocket),
-    spawn_client(Socket),
-    accept_loop(ListenSocket).
+accept_loop(ListenSocket, ConnNum0) ->
+    ConnNum1 = case gen_tcp:accept(ListenSocket, 500) of
+                   {ok, Socket} ->
+                       spawn_client(Socket),
+                       ConnNum0 + 1;
+                   {error, timeout} ->
+                       ConnNum0
+               end,
+    ConnNum2 = receive
+                   {abacus_req, From, conn_cnt} ->
+                       From ! {abacus_req, {ok, ConnNum1}},
+                       ConnNum1;
+                   {'DOWN', _Ref, process, _Pid, _Reason} ->
+                       ConnNum1 - 1
+               after 500 ->
+                       ConnNum1
+               end,
+    accept_loop(ListenSocket, ConnNum2).
 
 spawn_client(Socket) ->
-    Pid = spawn_link(fun() -> client_loop(Socket) end),
+    {Pid, _Ref} = spawn_monitor(fun() -> client_loop(Socket) end),
     ok = gen_tcp:controlling_process(Socket, Pid).
 
 client_loop(Socket) ->
