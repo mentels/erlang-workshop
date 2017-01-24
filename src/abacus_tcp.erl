@@ -1,46 +1,63 @@
 -module(abacus_tcp).
 
--export([start/1, conn_cnt/0]).
--export([init/1]).
+-behaviour(gen_server).
+
+-record(state, {listen_socket,
+                conn_cnt}).
+
+-export([start_link/1,
+         conn_cnt/0]).
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2]).
 
 %% API
 
-start(Port) ->
-    Pid = spawn(?MODULE, init, [Port]),
-    register(?MODULE, Pid).
+start_link(Port) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Port, []).
 
 conn_cnt() ->
-    ?MODULE ! {abacus_req, self(), conn_cnt},
-    receive
-        {abacus_req, Reply} ->
-            Reply
-    end.
+    gen_server:call(?MODULE, {abacus_req, conn_cnt}).
 
-%% Internal Functions
+%% Callbacks
 
 init(Port) ->
     {ok, ListenSocket} = gen_tcp:listen(Port, [{active, true},
                                                {reuseaddr, true}]),
-    accept_loop(ListenSocket, 0).
+    gen_server:cast(?MODULE, {abacus_req, accept}),
+    {ok, #state{listen_socket = ListenSocket, conn_cnt = 0}}.
 
-accept_loop(ListenSocket, ConnNum0) ->
-    ConnNum1 = case gen_tcp:accept(ListenSocket, 500) of
-                   {ok, Socket} ->
-                       spawn_client(Socket),
-                       ConnNum0 + 1;
-                   {error, timeout} ->
-                       ConnNum0
-               end,
-    ConnNum2 = receive
-                   {abacus_req, From, conn_cnt} ->
-                       From ! {abacus_req, {ok, ConnNum1}},
-                       ConnNum1;
-                   {'DOWN', _Ref, process, _Pid, _Reason} ->
-                       ConnNum1 - 1
-               after 500 ->
-                       ConnNum1
-               end,
-    accept_loop(ListenSocket, ConnNum2).
+handle_call({abacus_req, conn_cnt}, _From,
+            #state{conn_cnt = Cnt} = State) ->
+    {reply, {ok, Cnt}, State};
+handle_call(_Req, _From, State) ->
+    {reply, {error, not_implemented}, State}.
+
+handle_cast({abacus_req, accept}, #state{conn_cnt = Cnt} = State) ->
+    case gen_tcp:accept(State#state.listen_socket, 500) of
+        {ok, Socket} ->
+            spawn_client(Socket),
+            gen_server:cast(?MODULE, {abacus_req, accept}),
+            {noreply, State#state{conn_cnt = Cnt + 1}};
+        {error, timeout} ->
+            gen_server:cast(?MODULE, {abacus_req, accept}),
+            {noreply, State}
+    end;
+handle_cast(_Req, State) ->
+    {noreply, State}.
+
+handle_info({'DOWN', _Ref, process, _Pid, _Reason},
+            #state{conn_cnt = Cnt} = State) ->
+    {noreply, State#state{conn_cnt = Cnt - 1}};
+handle_info(_, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+%% Internal Functions
 
 spawn_client(Socket) ->
     {Pid, _Ref} = spawn_monitor(fun() -> client_loop(Socket) end),
